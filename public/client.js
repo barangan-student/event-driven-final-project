@@ -1,81 +1,110 @@
+// public/client.js
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Phase 1 & 2: Project Setup and Core Functionality
     const socket = io();
+    let myUsername = '';
 
-    // DOM Elements
-    const usernameContainer = document.getElementById('username-container');
-    const chatContainer = document.getElementById('chat-container');
-    const usernameForm = document.getElementById('username-form');
+    // --- DOM Element References ---
+    const joinScreen = document.getElementById('join-screen');
+    const chatScreen = document.getElementById('chat-screen');
+    const joinForm = document.getElementById('join-form');
     const usernameInput = document.getElementById('username-input');
-    const messageForm = document.getElementById('message-form');
+    const joinErrorMessage = document.getElementById('join-error-message');
+    const chatForm = document.getElementById('chat-form');
     const messageInput = document.getElementById('message-input');
-    const messages = document.getElementById('messages');
+    const chatMessages = document.getElementById('chat-messages');
     const userList = document.getElementById('user-list');
-    const connectionStatus = document.getElementById('connection-status');
+    const statusIndicator = document.getElementById('status-indicator');
     const typingIndicator = document.getElementById('typing-indicator');
-    
-    let username = '';
+    const usersSidebar = document.getElementById('users-sidebar');
+    const toggleUsersBtn = document.getElementById('toggle-users-btn');
 
-    // Phase 3: Enhanced Features (Client-side Event Handling)
-    // Handle username submission
-    usernameForm.addEventListener('submit', (e) => {
-        e.preventDefault(); // Prevent default form submission
-        const inputUsername = usernameInput.value.trim();
-        
-        // Input validation
-        if (inputUsername) {
-            username = inputUsername;
-            socket.emit('join', username);
-            usernameContainer.classList.add('hidden');
-            chatContainer.classList.remove('hidden');
-            messageInput.focus();
-        }
-    });
+    // --- Event Handlers ---
 
-    // Handle message submission
-    messageForm.addEventListener('submit', (e) => {
+    // Handle the user joining the chat
+    joinForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        const text = messageInput.value.trim();
+        const username = usernameInput.value.trim();
+        if (username) {
+            socket.emit('join', username);
+        }
+    });
 
-        // Input validation and sanitization
-        if (text) {
-            socket.emit('message', text);
+    // Handle sending a chat message
+    chatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const message = messageInput.value.trim();
+        if (message && message.length <= 280) {
+            socket.emit('message', message);
             messageInput.value = '';
         }
     });
 
-    // Keyboard shortcuts
+    // Handle keyboard shortcuts in the message input
     messageInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            messageForm.dispatchEvent(new Event('submit'));
-        } else if (e.key === 'Escape') {
+        if (e.key === 'Escape') {
             messageInput.value = '';
         }
     });
-    
+
+    // Emit a 'typing' event when the user types in the input field
+    let typingTimer;
+    messageInput.addEventListener('input', () => {
+        socket.emit('typing');
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => {}, 3000);
+    });
+
+    // Toggle the user sidebar visibility on smaller screens
+    toggleUsersBtn.addEventListener('click', () => {
+        usersSidebar.classList.toggle('visible');
+    });
+
     // --- Socket.IO Event Listeners ---
-
-    // Connection status
+    
+    // Handle successful connection
     socket.on('connect', () => {
-        updateConnectionStatus(true);
+        statusIndicator.textContent = 'Connected';
+        statusIndicator.className = 'connected';
     });
-
+    
+    // Handle disconnection
     socket.on('disconnect', () => {
-        updateConnectionStatus(false);
-    });
-    
-    // Listen for incoming messages
-    socket.on('message', (message) => {
-        displayMessage(message);
-    });
-    
-    // Listen for message history
-    socket.on('message_history', (history) => {
-        history.forEach(message => displayMessage(message));
+        statusIndicator.textContent = 'Disconnected';
+        statusIndicator.className = 'disconnected';
     });
 
-    // Update connected users list
+    // Handle successful join event from server
+    socket.on('join_success', (username) => {
+        // Set the username based on the server's confirmation.
+        myUsername = username;
+        joinScreen.classList.add('hidden');
+        chatScreen.classList.remove('hidden');
+        joinErrorMessage.textContent = '';
+    });
+    
+    // Handle failed join event from server
+    socket.on('join_error', (errorMsg) => {
+        joinErrorMessage.textContent = errorMsg;
+    });
+
+    // Render message history on connect
+    socket.on('history', (messages) => {
+        chatMessages.innerHTML = '';
+        messages.forEach(msg => renderMessage(msg));
+    });
+
+    // Render a new incoming message
+    socket.on('message', (data) => {
+        renderMessage(data);
+    });
+
+    // Render a server notification
+    socket.on('notification', (text) => {
+        renderNotification(text);
+    });
+
+    // Update the list of connected users
     socket.on('user_list', (users) => {
         userList.innerHTML = '';
         users.forEach(user => {
@@ -85,69 +114,67 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Handle username error
-    socket.on('error_message', (errorMessage) => {
-        alert(errorMessage);
-        usernameContainer.classList.remove('hidden');
-        chatContainer.classList.add('hidden');
-        username = '';
-    });
-    
-    // Typing indicator logic
-    let typingTimer;
-    messageInput.addEventListener('input', () => {
-        socket.emit('typing');
-        clearTimeout(typingTimer);
-        typingTimer = setTimeout(() => {
-            socket.emit('stop_typing'); // A corresponding server-side event could be added if needed
-        }, 1000); 
-    });
-
-    socket.on('typing', (text) => {
-        typingIndicator.textContent = text;
-        setTimeout(() => {
+    // Display the typing indicator
+    let typingIndicatorTimer;
+    socket.on('typing', (username) => {
+        typingIndicator.textContent = `${username} is typing...`;
+        clearTimeout(typingIndicatorTimer);
+        typingIndicatorTimer = setTimeout(() => {
             typingIndicator.textContent = '';
-        }, 2000); // Clear after 2 seconds
+        }, 2000);
     });
-    
+
     // --- Helper Functions ---
-
-    function displayMessage(message) {
-        const item = document.createElement('div');
-        item.classList.add('message');
-
-        // Add visual distinction for messages
-        if (message.username === username) {
-            item.classList.add('own');
-        } else if (message.username === 'System') {
-            item.classList.add('system');
+    
+    /**
+     * Renders a chat message in the chat window.
+     * @param {object} data - The message data object { user, text, timestamp }.
+     */
+    function renderMessage(data) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message');
+        if (data.user === myUsername) {
+            messageElement.classList.add('my-message');
         } else {
-            item.classList.add('other');
+            messageElement.classList.add('other-message');
         }
-
-        // Sanitize text content to prevent HTML injection
-        const sanitizedText = document.createElement('p');
-        sanitizedText.textContent = message.text;
-
-        item.innerHTML = `
-            <div class="info">
-                <span class="username">${message.username}</span>
-                <span class="timestamp">${message.timestamp}</span>
+        messageElement.innerHTML = `
+            <div class="meta">
+                <span>${data.user}</span><span class="timestamp">${data.timestamp}</span>
             </div>
+            <div class="text">${sanitizeHTML(data.text)}</div>
         `;
-        item.appendChild(sanitizedText);
-        
-        messages.appendChild(item);
-        messages.scrollTop = messages.scrollHeight; // Auto-scrolling
+        chatMessages.appendChild(messageElement);
+        scrollToBottom();
+    }
+    
+    /**
+     * Renders a system notification in the chat window.
+     * @param {string} text - The notification text.
+     */
+    function renderNotification(text) {
+        const notificationElement = document.createElement('div');
+        notificationElement.classList.add('notification');
+        notificationElement.textContent = text;
+        chatMessages.appendChild(notificationElement);
+        scrollToBottom();
+    }
+    
+    /**
+     * Automatically scrolls the chat window to the latest message.
+     */
+    function scrollToBottom() {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    function updateConnectionStatus(isConnected) {
-        if (isConnected) {
-            connectionStatus.textContent = 'Status: Connected';
-            connectionStatus.classList.add('connected');
-        } else {
-            connectionStatus.textContent = 'Status: Disconnected';
-            connectionStatus.classList.remove('connected');
-        }
+    /**
+     * Sanitizes a string to prevent HTML injection (XSS).
+     * @param {string} str - The input string.
+     * @returns {string} The sanitized string.
+     */
+    function sanitizeHTML(str) {
+        const temp = document.createElement('div');
+        temp.textContent = str;
+        return temp.innerHTML;
     }
 });
