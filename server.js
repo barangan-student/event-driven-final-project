@@ -49,7 +49,7 @@ io.on('connection', (socket) => {
         socket.emit('join_success', username);
 
         // Notify ALL clients (including the sender) that a new user has joined.
-        io.emit('notification', `${username} has joined the chat.`);
+        socket.broadcast.emit('notification', `${username} has joined the chat.`);
         
         // Send the updated user list to all clients
         io.emit('user_list', Object.values(connectedUsers));

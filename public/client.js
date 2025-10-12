@@ -38,6 +38,10 @@ document.addEventListener('DOMContentLoaded', () => {
             socket.emit('message', message);
             messageInput.value = '';
         }
+        else if (message.length > 280) {
+        // Required action: Display error message when character limit is exceeded [1]
+        renderNotification('Message length exceeds the 280-character limit.');
+    }
     });
 
     // Handle keyboard shortcuts in the message input
